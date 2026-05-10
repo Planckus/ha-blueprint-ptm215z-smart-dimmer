@@ -1,0 +1,181 @@
+blueprint:
+  name: "Z2M PTM 215Z - Smart Dimmer"
+  description: >
+    Full control for EnOcean PTM 215Z (Friends of Hue) switch via Zigbee2MQTT.
+
+    - **Button 1** short press: Turn on (restores last brightness)
+    - **Button 2** hold: Dim up smoothly — release to stop
+    - **Button 3** short press: Turn off
+    - **Button 4** hold: Dim down smoothly — release to stop
+
+    Uses native Zigbee `brightness_move` for smooth hardware-level dimming.
+    Works with individual lights and light groups.
+  domain: automation
+  author: mikkelplanck
+  input:
+    mqtt_topic:
+      name: Switch MQTT topic
+      description: >
+        Full Zigbee2MQTT MQTT topic for your switch.
+        Example: `zigbee2mqtt/switch_kontor`
+      selector:
+        text:
+    light_entity:
+      name: Light / Light group
+      description: >
+        The light or light group to control (used for turn on/off).
+        If using a light group, the individual bulb friendly names must
+        match their Zigbee2MQTT device names.
+      selector:
+        entity:
+          domain: light
+    base_topic:
+      name: Zigbee2MQTT base topic
+      description: >
+        Base MQTT topic of your Zigbee2MQTT installation.
+        Default is `zigbee2mqtt` — only change if you customized it.
+      default: zigbee2mqtt
+      selector:
+        text:
+    brightness_speed:
+      name: Dimming speed
+      description: >
+        How fast brightness changes (1–255 per second on Zigbee scale).
+        85 = full range in ~3 seconds. Higher = faster.
+      default: 85
+      selector:
+        number:
+          min: 1
+          max: 255
+          step: 5
+          mode: slider
+
+mode: restart
+
+variables:
+  light_entity: !input light_entity
+  base_topic: !input base_topic
+  brightness_speed: !input brightness_speed
+
+trigger:
+  - platform: mqtt
+    topic: !input mqtt_topic
+    value_template: "{{ value_json.action }}"
+    payload: "press_1"
+    id: press_1
+  - platform: mqtt
+    topic: !input mqtt_topic
+    value_template: "{{ value_json.action }}"
+    payload: "press_2"
+    id: press_2
+  - platform: mqtt
+    topic: !input mqtt_topic
+    value_template: "{{ value_json.action }}"
+    payload: "release_2"
+    id: release_2
+  - platform: mqtt
+    topic: !input mqtt_topic
+    value_template: "{{ value_json.action }}"
+    payload: "press_3"
+    id: press_3
+  - platform: mqtt
+    topic: !input mqtt_topic
+    value_template: "{{ value_json.action }}"
+    payload: "press_4"
+    id: press_4
+  - platform: mqtt
+    topic: !input mqtt_topic
+    value_template: "{{ value_json.action }}"
+    payload: "release_4"
+    id: release_4
+
+action:
+  - choose:
+
+      # Button 1 — Turn on at last known brightness
+      - conditions:
+          - condition: trigger
+            id: press_1
+        sequence:
+          - service: light.turn_on
+            target:
+              entity_id: !input light_entity
+
+      # Button 2 held — Dim up (brightness_move on each bulb in group)
+      - conditions:
+          - condition: trigger
+            id: press_2
+        sequence:
+          - repeat:
+              for_each: >
+                {{ state_attr(light_entity, 'entity_id')
+                   if state_attr(light_entity, 'entity_id') is not none
+                   else [light_entity] }}
+              sequence:
+                - service: mqtt.publish
+                  data:
+                    topic: >
+                      {{ base_topic }}/{{ state_attr(repeat.item, 'friendly_name') }}/set
+                    payload: >
+                      {"brightness_move": {{ brightness_speed }}}
+
+      # Button 2 released — Stop dimming
+      - conditions:
+          - condition: trigger
+            id: release_2
+        sequence:
+          - repeat:
+              for_each: >
+                {{ state_attr(light_entity, 'entity_id')
+                   if state_attr(light_entity, 'entity_id') is not none
+                   else [light_entity] }}
+              sequence:
+                - service: mqtt.publish
+                  data:
+                    topic: >
+                      {{ base_topic }}/{{ state_attr(repeat.item, 'friendly_name') }}/set
+                    payload: '{"brightness_move": "stop"}'
+
+      # Button 3 — Turn off
+      - conditions:
+          - condition: trigger
+            id: press_3
+        sequence:
+          - service: light.turn_off
+            target:
+              entity_id: !input light_entity
+
+      # Button 4 held — Dim down
+      - conditions:
+          - condition: trigger
+            id: press_4
+        sequence:
+          - repeat:
+              for_each: >
+                {{ state_attr(light_entity, 'entity_id')
+                   if state_attr(light_entity, 'entity_id') is not none
+                   else [light_entity] }}
+              sequence:
+                - service: mqtt.publish
+                  data:
+                    topic: >
+                      {{ base_topic }}/{{ state_attr(repeat.item, 'friendly_name') }}/set
+                    payload: >
+                      {"brightness_move": {{ -brightness_speed }}}
+
+      # Button 4 released — Stop dimming
+      - conditions:
+          - condition: trigger
+            id: release_4
+        sequence:
+          - repeat:
+              for_each: >
+                {{ state_attr(light_entity, 'entity_id')
+                   if state_attr(light_entity, 'entity_id') is not none
+                   else [light_entity] }}
+              sequence:
+                - service: mqtt.publish
+                  data:
+                    topic: >
+                      {{ base_topic }}/{{ state_attr(repeat.item, 'friendly_name') }}/set
+                    payload: '{"brightness_move": "stop"}'
