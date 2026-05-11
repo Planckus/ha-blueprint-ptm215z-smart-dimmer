@@ -134,7 +134,3 @@ For example, if your switch is named `switch_living_room` in Z2M, the topic is `
 ## License
 
 MIT — free to use, share, and modify.
-
----
-
-*Made with ❤️ and [Claude](https://claude.ai)*
